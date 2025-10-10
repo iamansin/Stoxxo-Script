@@ -1,7 +1,0 @@
-httpx
-pydantic
-structlog
-PyYAML
-pytz
-loguru
-python-dotenv
