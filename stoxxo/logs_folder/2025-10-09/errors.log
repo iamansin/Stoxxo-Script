@@ -1,4 +1,0 @@
-2025-10-09 03:37:16.789 | ERROR    | models:dump_data_to_log:124 | Error while logging order data: Object of type OptionType is not JSON serializable
-2025-10-09 03:37:16.798 | ERROR    | models:dump_data_to_log:124 | Error while logging order data: Object of type OptionType is not JSON serializable
-2025-10-09 03:37:17.790 | ERROR    | models:dump_data_to_log:124 | Error while logging order data: Object of type OptionType is not JSON serializable
-2025-10-09 03:37:17.796 | ERROR    | models:dump_data_to_log:124 | Error while logging order data: Object of type OptionType is not JSON serializable
