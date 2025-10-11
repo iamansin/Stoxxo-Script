@@ -8,6 +8,7 @@ from core.models import (
     OrderObj,
     Providers,
     OrderStatus,
+    ExpiryMonth
 )
 from core.cache_manager import VariableCache
 from core.config import AdapterConfig, TradetronConfig
@@ -17,13 +18,13 @@ load_dotenv()
 class BaseAdapter:
     """Base adapter class"""
 
-    def __init__(self, provider: Providers, config: AdapterConfig):
+    def __init__(self, provider: Providers, config: AdapterConfig, cache_memory : VariableCache):
         self.provider : Providers= provider
         self.active = True  # Set to True by default
         self.base_url = config.BASE_URL
         self.timeout = config.TIMEOUT
         self.http_client = httpx.AsyncClient(timeout=self.timeout)
-        self.variable_cache = VariableCache()
+        self.variable_cache = cache_memory
         
         # Validate configuration and activate
         if not self.base_url:
@@ -140,46 +141,12 @@ class BaseAdapter:
 class TradetronAdapter(BaseAdapter):
     """Tradetron adapter"""
 
-    def __init__(self, config: TradetronConfig):
-        super().__init__(provider=Providers.TRADETRON, config=config)
+    def __init__(self, config: TradetronConfig, cache_memory : VariableCache):
+        super().__init__(provider=Providers.TRADETRON, config=config, cache_memory = cache_memory)
         # Additional Tradetron-specific initialization
-        try:
-            # Verify that we can load strategy tokens and index mappings
-            self.variable_cache._load_mappings()
-            logger.info(f"Tradetron adapter initialized successfully with mappings")
-        except Exception as e:
-            logger.error(f"Failed to initialize Tradetron adapter: {e}")
-            self.active = False
-
-        
-    def _convert_expiry_format(self, expiry_str: str) -> str:
-        """
-        Convert expiry from '7TH OCT' format to 'YYYY-MM-DD'.
-        If year is not provided, use current year.
-        """
-        try:
-            # Remove ordinal indicators (TH, ST, ND, RD)
-            expiry_str = expiry_str.upper()
-            for suffix in ['TH', 'ST', 'ND', 'RD']:
-                expiry_str = expiry_str.replace(suffix, '')
-            
-            # Parse the date with current year
-            current_year = datetime.now().year
-            date_str = f"{expiry_str.strip()} {current_year}"
-            
-            # Parse and format the date
-            expiry_date = datetime.strptime(date_str, "%d %b %Y")
-            return expiry_date.strftime("%Y-%m-%d")
-            
-        except Exception as e:
-            logger.error(f"Error converting expiry date '{expiry_str}': {e}")
-            return expiry_str  # Return original if parsing fails
 
     def map_order(self, order: OrderObj) -> Dict[str, Any]:
         """Map to Tradetron-specific format"""
-        # Convert expiry to YYYY-MM-DD format
-        formatted_expiry = self._convert_expiry_format(order.expiry)
-        
         # Get cached values with error checking
         token = self.variable_cache.get_strategy_token(order.strategy_tag, provider=self.provider)
         if not token:
@@ -203,7 +170,7 @@ class TradetronAdapter(BaseAdapter):
             'key4': 'QUANTITY',
             'value4': order.quantity,
             'key5': 'EXPIRY',
-            'value5': formatted_expiry
+            'value5': order.expiry.value if isinstance(order.expiry, ExpiryMonth) else order.expiry
         }
         logger.info(f"Mapped order for Tradetron: {mapped_order}")
         return mapped_order

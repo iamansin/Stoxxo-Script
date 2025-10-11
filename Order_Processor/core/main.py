@@ -13,7 +13,7 @@ from core.adapters import TradetronAdapter
 from core.config import Config, TradetronConfig
 from loguru import logger
 from core.logging_config import setup_logging
-
+from core.cache_manager import VariableCache
 # Setup logging
 setup_logging()
 
@@ -47,6 +47,7 @@ class OrderProcessingSystem:
     def __init__(self, config: Config):
         self.config = config
         self.running = False
+        self.cache_memory = VariableCache()
         self.observer: Optional[threading.Thread] = None
         # Initialize components
         self.order_processor = OrderProcessor(
@@ -61,6 +62,7 @@ class OrderProcessingSystem:
             allowed_weekdays=config.allowed_weekdays,
             enable_premarket=config.enable_premarket,   
             enable_postmarket=config.enable_postmarket,
+            cache_memory = self.cache_memory
         )
         
         # Register adapters
@@ -70,7 +72,7 @@ class OrderProcessingSystem:
         """Register trading platform adapters"""
         if self.config.ENABLE_TRADETRON:
             self.order_processor.register_adapter(
-                TradetronAdapter(TradetronConfig())
+                TradetronAdapter(TradetronConfig(), self.cache_memory)
             )
         
         # if self.config.ENABLE_ALGOBULLS:

@@ -1,12 +1,17 @@
 import json
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
 from enum import Enum
 import uuid
 from loguru import logger
+
+class ExpiryMonth(Enum):
+    CURRENT = 1
+    NEXT = 2 
+    NEXT2NEXT = 3
 
 class OrderStatus(Enum):
     PENDING = "pending"
@@ -43,7 +48,7 @@ class OrderObj(BaseModel):
     index : str
     strike : str
     quantity : str
-    expiry : str
+    expiry : Union[str | ExpiryMonth]
     order_type : OrderType
     exchange : Exchange
     product : ProductType
@@ -51,6 +56,7 @@ class OrderObj(BaseModel):
     actual_time : datetime
     parse_time : datetime
     stoxxo_order : str
+    monthly_expiry : bool = False
     mapped_order : Optional[Dict[str, Any]] = None
     adapter_name : Optional[str] = None
     processing_gap: int  # in milliseconds(parse_time - actual_time)

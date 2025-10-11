@@ -14,13 +14,14 @@ class VariableCache:
     Fast in-memory cache for strategy tokens and index mappings.
     Loads data from CSV files at startup and provides O(1) access.
     """
+
     def __init__(self):
         load_dotenv()
         self._strategy_tokens: Dict[tuple, str] = {}  # (strategy, provider) -> token
         self._index_mappings: Dict[str, str] = {}  # (index, provider) -> value
+        self.active_strategy_map : Dict[str, str] = {}
         self.provider_config = TradetronConfig()
         self._load_mappings()
-
 
     def _load_mappings(self):
         """Load mappings from CSV files specified in environment variables"""
@@ -34,11 +35,13 @@ class VariableCache:
                     for row in reader:
                         strategy = row['strategy']
                         provider = Providers.TRADETRON.value  # Default to tradetron
+                        self.active_strategy_map[strategy] = row['active']
                         token = row['token']
                         self._strategy_tokens[(strategy, provider)] = token
                         logger.info(f"Loaded strategy: {strategy} ({provider}) -> {token}")
                 
                 logger.info(f"Loaded {len(self._strategy_tokens)} strategy mappings")
+                logger.info(f"Active Strategies :--> { list(self.active_strategy_map.keys())}")
             else:
                 logger.error(f"Strategy mapping file not found: {strategy_file}")
 
@@ -57,6 +60,7 @@ class VariableCache:
                 logger.info(f"Loaded {len(self._index_mappings)} index mappings")
             else:
                 logger.error(f"Index mapping file not found: {index_file}")
+                raise "Not able to load cache memory"
 
         except Exception as e:
             logger.error(f"Error loading mappings: {e}")
@@ -101,7 +105,12 @@ class VariableCache:
         except ValueError as e:
             logger.error(f"Error converting mapping value '{value}' to integer for index: {index}")
             return None
-            
+
+    def strategy_is_active(self, strategy_key : str) -> bool:
+        return True if self.active_strategy_map.get(strategy_key, False).lower() == 'true' else False
+
+    def active_strategies(self):
+        return self.active_strategy_map.keys()
 
     def reload(self):
         """Reload mappings from files"""

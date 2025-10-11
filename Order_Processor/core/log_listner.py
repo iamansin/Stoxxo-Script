@@ -9,8 +9,8 @@ from core.order_processor import OrderProcessor
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 from loguru import logger
-from core.models import OrderObj, OrderType, Exchange, ProductType, OptionType
-
+from core.models import OrderObj, OrderType, Exchange, ProductType, OptionType, ExpiryMonth
+from core.cache_manager import VariableCache
 
 class TradingHoursValidator:
     """Validates if current time is within allowed trading hours"""
@@ -80,6 +80,7 @@ class OrderParser:
     
     def __init__(
         self,
+        cache_memory : VariableCache,
         min_quantity: int = 1,
         max_quantity: int = 10000,
     ):
@@ -93,21 +94,135 @@ class OrderParser:
         """
         self.min_quantity = min_quantity
         self.max_quantity = max_quantity
+        self.cache_memory = cache_memory
         # self.queue = queue or asyncio.Queue()
+
+    def _format_expiry(self, expiry_str : str):
+        """
+        Parses expiry strings into yyyy-mm-dd format.
+
+        Supports:
+        - '7TH OCT'
+        - '05 NOV'
+        - '16OCT25'
+        - 'OCT'
+        - 'DEC'
+        - 'OCT25' (same as 'OCT')
+        """
+        expiry_str = expiry_str.strip().upper()
+        today = datetime.today()
+        current_year = today.year
+        current_month = today.month
+
+        # --- 1. Handle compact format: 16OCT25 ---
+        try:
+            if len(expiry_str) == 7 and expiry_str[:2].isdigit():
+                day = int(expiry_str[:2])
+                month_str = expiry_str[2:5]
+                year = int("20" + expiry_str[5:])
+                month = datetime.strptime(month_str, "%b").month
+                return datetime(year, month, day).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+        parts = expiry_str.split()
+
+        # --- 2. Handle Day + Month + (optional year): '7TH OCT', '05 NOV' ---
+        if len(parts) >= 2:
+            try:
+                day_str = parts[0].rstrip("STNDRDTH")  # Remove suffix like 7TH → 7
+                day = int(day_str)
+                month = datetime.strptime(parts[1], "%b").month
+                year = current_year
+                if len(parts) == 3 and parts[2].isdigit():
+                    year = int("20" + parts[2])
+                return datetime(year, month, day).strftime("%Y-%m-%d")
+            except Exception:
+                pass
+
+        # --- 3. Handle Month-only: 'OCT', 'OCT25', 'DEC' ---
+        try:
+            # Remove year from 'OCT25' to treat like 'OCT'
+            if len(expiry_str) > 3 and expiry_str[:3].isalpha():
+                month_str = expiry_str[:3]
+            else:
+                month_str = expiry_str
+
+            input_month = datetime.strptime(month_str, "%b").month
+
+            # Map input month to current / next / next-to-next
+            if input_month == current_month:
+                return ExpiryMonth.CURRENT
+            elif input_month == (current_month % 12) + 1:
+                return ExpiryMonth.NEXT
+            elif input_month == ((current_month + 1) % 12) + 1:
+                return ExpiryMonth.NEXT2NEXT
+            else:
+                raise ValueError(f"Month '{month_str}' is not within expected 3-month range.")
+        except Exception:
+            raise ValueError(f"Unrecognized expiry format: '{expiry_str}'")
+
         
     def _parse_symbol_details(self, symbol_str: str) -> tuple[str, str, str, OptionType]:
-        """Parse symbol string into components"""
-        # Example: "NIFTY 7TH OCT 25900 CE"
-        parts = symbol_str.split()
-        if len(parts) != 5:
-            raise ValueError(f"Invalid symbol format: {symbol_str}")
-            
-        index = parts[0]
-        expiry = f"{parts[1]} {parts[2]}"  # "7TH OCT"
-        strike = parts[3]
-        option_type = OptionType.CE if parts[4] == "CE" else OptionType.PE
+        """
+        Parses option symbol into (index, expiry, strike, option_type).
         
+        Supports expiry formats:
+        - "7TH OCT"
+        - "05 NOV"
+        - "16OCT25"
+        - "OCT"
+        - "OCT25"
+        """
+        pattern = r"""
+            ^\s*
+            (?P<index>[A-Z]+)                        # Index
+            \s+
+            (?:
+                (?P<day1>\d{1,2}(?:ST|ND|RD|TH)?)     # Day with suffix (7TH)
+                \s+
+                (?P<month1>[A-Z]{3})                  # Month (OCT)
+                (?:\s*(?P<year1>\d{2}))?              # Optional year
+                |
+                (?P<compact>\d{1,2}[A-Z]{3}\d{2})     # Compact expiry e.g., 16OCT25
+                |
+                (?P<month2>[A-Z]{3})(?P<year2>\d{2})? # Month or Month+Year e.g., OCT, OCT25
+            )
+            \s+
+            (?P<strike>\d+)                          # Strike
+            \s+
+            (?P<option_type>CE|PE|C|P)               # Option Type
+            \s*$
+        """
+
+        match = re.match(pattern, symbol_str.strip(), re.IGNORECASE | re.VERBOSE)
+        if not match:
+            logger.error(f"Not able to parse the symbol : {symbol_str}")
+            raise ValueError(f"Invalid symbol format: {symbol_str}")
+
+        index = match.group("index").upper()
+
+        # Determine which expiry format matched
+        if match.group("compact"):
+            expiry = match.group("compact").upper()
+        elif match.group("day1") and match.group("month1"):
+            expiry = f"{match.group('day1').upper()} {match.group('month1').upper()}"
+            if match.group("year1"):
+                expiry += match.group("year1")
+        elif match.group("month2"):
+            expiry = match.group("month2").upper()
+            if match.group("year2"):
+                expiry += match.group("year2")
+        else:
+            raise ValueError(f"Invalid expiry format in symbol: {symbol_str}")
+
+        expiry = self._format_expiry(expiry)
+        strike = match.group("strike")
+        opt_raw = match.group("option_type").upper()
+        option_type = OptionType.CE if opt_raw in ("CE", "C") else OptionType.PE
+
         return index, expiry, strike, option_type
+
 
     def _parse_datetime(self, time_str: str) -> datetime:
         """
@@ -152,13 +267,16 @@ class OrderParser:
     def process_log_line(self, line: str) -> Optional[OrderObj]:
         """Process a single log line and create OrderObj if valid"""
         try:
-            logger.debug(f"Processing log line: {line.strip()}")
             # Split CSV line
             parts = line.strip().split(',')
             if len(parts) < 5 or parts[1] != "TRADING" or "Initiating Order Placement" not in parts[2]:
                 return None
-
+       
             timestamp, log_type, order_details, strategy, test_flag, portfolio = parts
+
+            if not self.cache_memory.strategy_is_active(strategy):
+                logger.warning(f"Startegy is not active : {strategy} Dropping it's order for {order_details}")
+                return None
 
             # Extract order details from the message
             details = {}
@@ -200,8 +318,8 @@ class OrderParser:
             return order
             
         except Exception as e:
-            logger.error(f"Error processing log line: {e}")
-            return None
+            logger.error(f"Error processing log line::{line}   |   {e}")
+            return 
             
     def _validate_order(self, order: OrderObj) -> bool:
         """Validate the created order"""
@@ -237,6 +355,7 @@ class GridLogEventHandler(FileSystemEventHandler):
         event_loop: asyncio.AbstractEventLoop,
         hours_validator: TradingHoursValidator,
         order_processor: OrderProcessor,
+        cache_memory : VariableCache,
         target_filename: str = "GridLog.csv",
     ):
         """
@@ -252,7 +371,7 @@ class GridLogEventHandler(FileSystemEventHandler):
         self.event_loop = event_loop
         self.hours_validator = hours_validator
         self.target_filename = target_filename
-        self.order_parser = OrderParser()
+        self.order_parser = OrderParser(cache_memory)
         self.order_processor = order_processor
         self.file_handle = None
         self.last_position = 0
@@ -376,6 +495,7 @@ class LogMonitor:
         self,
         log_path: str,
         order_processor,
+        cache_memory : VariableCache,
         target_filename: str = "GridLog.csv",
         # Trading hours configuration
         allowed_weekdays: Set[int] = {0, 1, 2, 3, 4, 5},  # Mon-Fri
@@ -407,7 +527,7 @@ class LogMonitor:
         self.log_path = Path(log_path)
         self.order_processor = order_processor
         self.target_filename = target_filename
-        
+        self.cache_memory = cache_memory
         # Validators
         self.hours_validator = TradingHoursValidator(
             allowed_weekdays=allowed_weekdays,
@@ -450,6 +570,7 @@ class LogMonitor:
             event_loop=event_loop,
             hours_validator=self.hours_validator,
             target_filename=self.target_filename,
+            cache_memory = self.cache_memory
         )
         
         # Create observer
