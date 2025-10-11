@@ -17,6 +17,8 @@ from core.logging_config import setup_logging
 # Setup logging
 setup_logging()
 
+
+
 # Configure event loop based on platform
 if platform.system() != 'Windows':
     try:
@@ -24,7 +26,14 @@ if platform.system() != 'Windows':
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         logger.info("Using uvloop event loop")
     except ImportError:
-        logger.warning("uvloop not available, using default event loop")
+        logger.warning("uvloop not available, trying to install...")
+        try:
+            os.system(f"{sys.executable} -m pip install uvloop")
+            import uvloop
+            asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        except Exception as e:
+            logger.error(f"Failed to install uvloop: {e}")
+            logger.info("Falling back to default asyncio event loop")
 else:
     # Use WindowsProactorEventLoop for better performance on Windows
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())

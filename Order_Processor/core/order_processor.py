@@ -4,8 +4,7 @@ from core.adapters import BaseAdapter
 import logging
 from typing import List, Dict, Any, Optional
 from core.models import OrderObj
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 class OrderProcessor:
     """Processes orders from queue and sends to dispatcher"""

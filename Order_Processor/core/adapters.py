@@ -1,5 +1,5 @@
 import asyncio
-import logging
+from loguru import logger
 from typing import Dict, Any, List
 from datetime import datetime
 from dotenv import load_dotenv
@@ -12,8 +12,7 @@ from core.models import (
 from core.cache_manager import VariableCache
 from core.config import AdapterConfig, TradetronConfig
 load_dotenv()
-
-logger = logging.getLogger(__name__)        
+    
 
 class BaseAdapter:
     """Base adapter class"""
@@ -117,6 +116,7 @@ class BaseAdapter:
                 response = await self.http_client.get(self.base_url, params=mapped_order)
                 response.raise_for_status() # Raises HTTPStatusError for 4xx/5xx responses
                 
+                logger.info(f"{self.provider} - Response: {response.status_code} - {response.text}")
                 if '200' not in str(response.status_code):
                     logger.error(f"{self.provider} - Order {order.order_id} failed with status code {response.status_code}: {response.text}")
                     return (OrderStatus.FAILED, f"HTTP {response.status_code}: {response.text}")
