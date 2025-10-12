@@ -5,20 +5,25 @@ import random
 from pathlib import Path
 from loguru import logger
 
+    
+
 def generate_order_signal():
     """Generate a random order signal with realistic parameters"""
+    indexes = ["NIFTY", "BANKNIFTY", "SENSE"]
+    index = random.choice(indexes)
     leg_id = random.randint(1000, 2000)
     strikes = [24000, 24500, 25000, 25500, 26000]
     strike = random.choice(strikes)
     qty = 525
     txn = random.choice(['BUY', 'SELL'])
     option_type = random.choice(['CE', 'PE'])
-    
+    expiries = ["14TH OCT", "OCT", "14OCT25"]
+    expiry = random.choice(expiries)
     # Format: timestamp,TRADING,order_details,strategy,test_flag,portfolio
     signal = (
         f"TRADING,"
         f"Initiating Order Placement for User: SIMULATED1 (SIM1 - APITest); "
-        f"Leg ID: {leg_id}; Symbol: NIFTY 14TH OCT {strike} {option_type}; "
+        f"Leg ID: {leg_id}; Symbol: NIFTY {expiry} {strike} {option_type}; "
         f"Qty: {qty}; Txn: {txn}; Portfolio: FRI-NIFTY-14.45; IsExit: False; "
         f"ExitSL: False; OrderType: MARKET; AtBroker: None,"
         f"SIM1,TEST,FRI-NIFTY-14.45"  # Add strategy, test flag, and portfolio

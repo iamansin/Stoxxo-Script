@@ -9,7 +9,7 @@ from typing import Optional
 import threading
 from core.log_listner import LogMonitor
 from core.order_processor import OrderProcessor
-from core.adapters import TradetronAdapter
+from core.adapters import TradetronAdapter, AlgotestAdapter
 from core.config import Config, TradetronConfig
 from loguru import logger
 from core.logging_config import setup_logging
@@ -47,7 +47,7 @@ class OrderProcessingSystem:
     def __init__(self, config: Config):
         self.config = config
         self.running = False
-        self.cache_memory = VariableCache()
+        self.cache_memory = VariableCache(config)
         self.observer: Optional[threading.Thread] = None
         # Initialize components
         self.order_processor = OrderProcessor(
@@ -75,10 +75,10 @@ class OrderProcessingSystem:
                 TradetronAdapter(TradetronConfig(), self.cache_memory)
             )
         
-        # if self.config.ENABLE_ALGOBULLS:
-        #     self.order_processor.register_adapter(
-        #         AlgobullsAdapter(self.config.ALGOBULLS_CONFIG, self)
-        #     )
+        if self.config.ENABLE_ALGOTEST:
+            self.order_processor.register_adapter(
+                AlgotestAdapter(self.config.ALGOTEST_CONFIG, self.cache_memory)
+            )
     
     async def start(self):
         """Start all components of the system"""

@@ -8,10 +8,6 @@ from enum import Enum
 import uuid
 from loguru import logger
 
-class ExpiryMonth(Enum):
-    CURRENT = 1
-    NEXT = 2 
-    NEXT2NEXT = 3
 
 class OrderStatus(Enum):
     PENDING = "pending"
@@ -37,25 +33,22 @@ class ProductType(Enum):
 
 class Providers(Enum):
     TRADETRON = "tradetron"
-    ALGOTRADES = "algotrades"
-    ZERODHA = "zerodha"
-    BINANCE = "binance"
-    COINBASE = "coinbase"
+    ALGOTEST = "algotest"
 
 class OrderObj(BaseModel):
     order_id: str
     strategy_tag: str
     index : str
     strike : str
-    quantity : str
-    expiry : Union[str | ExpiryMonth]
+    quantity : int
+    expiry : str
     order_type : OrderType
     exchange : Exchange
-    product : ProductType
     option_type : OptionType
     actual_time : datetime
     parse_time : datetime
     stoxxo_order : str
+    product : ProductType = ProductType.NRML
     monthly_expiry : bool = False
     mapped_order : Optional[Dict[str, Any]] = None
     adapter_name : Optional[str] = None
@@ -81,13 +74,11 @@ class OrderObj(BaseModel):
     def get_summary(self) -> Dict[str, Any]:
         return {
             "order_id": self.order_id,
-            "strategy": self.strategy_tag,
             "index": self.index,
             "strike": self.strike,
             "quantity": self.quantity,
             "expiry": self.expiry,
             "order_type": self.order_type.value,
-            "exchange": self.exchange.value,
             "product": self.product.value,
             "option_type": self.option_type.value,  # Convert enum to value
         }
@@ -110,18 +101,20 @@ class OrderObj(BaseModel):
                 "pipeline_latency": f"{pipeline_latency}ms" if pipeline_latency is not None else None,
                 "end_to_end_latency": f"{end_to_end_latency}ms" if end_to_end_latency is not None else None,
                 "stoxxo_order": self.stoxxo_order,
+                "strategy" : self.strategy_tag,
                 "order_summary": self.get_summary(),
                 "mapped_order": self.mapped_order if self.mapped_order else {},
                 "order_status": self.status.value,
                 "error_message": self.error_message if self.error_message else 'None'
             })
+            # Log to provider-specific file without console output
             if provider == Providers.TRADETRON:
-                logger.bind(tradetron=True).info(info)
+                logger.bind(tradetron=True, console=False).info(info)
+            elif provider == Providers.ALGOTEST:
+                logger.bind(algotest=True, console=False).info(info)
 
-            elif provider == Providers.ALGOTRADES:
-                logger.bind(algotrades=True).info(info)
-
-            logger.bind(order=True).info(info)
+            # Log to general order file with console output
+            logger.bind(order=True, console=True).info(info)
             return 
         
         except Exception as e:
