@@ -2,6 +2,7 @@ import asyncio
 from loguru import logger
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime
+import time
 from dotenv import load_dotenv
 import httpx
 from core.models import (
@@ -258,7 +259,7 @@ class AlgotestAdapter(BaseAdapter):
         lot = order.quantity//lot_size
         # Convert expiry date from "2025-10-16" format to "251016"
         expiry = order.expiry.replace('-', '')[-6:] 
-        instrument = f"{order.index}{expiry}{"C" if order.option_type.value == 1 else "P"}{order.strike}"
+        instrument = f"{order.index}{expiry}{'C' if order.option_type.value == 1 else 'P'}{order.strike}"
         try:
             symbol = f"{instrument} {order.order_type.value} {lot}"
             return {

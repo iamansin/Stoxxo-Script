@@ -22,5 +22,5 @@ def send_plain_trade_signal(instrument, action="sell", lots=1):
 
 # Example usage
 if __name__ == "__main__":
-    instrument = "NIFTY251014P25400"
+    instrument = "SENSEX251016P82300"
     send_plain_trade_signal(instrument, action="SELL", lots=1)

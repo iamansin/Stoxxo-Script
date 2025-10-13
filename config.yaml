@@ -7,7 +7,7 @@ strategies:
     algotest_urls:
       - "https://orders.algotest.in/webhook/tv/tk-trade?token=US8CD3R2JSpWWvRGbfwcYCgHRb8w8BFh&tag=68eb4e7474d39905b8d6e20c"
     active: true
-
+  
   - name: "NIFTY_Strategy"
     tradetron_urls:
       - "https://example.com/strategy2"
@@ -20,19 +20,37 @@ strategies:
 # Index mappings
 index_mappings:
   NIFTY: "1"
-  BANKNIFTY: "2"
-  FINNIFTY: "3"
-  SENSE: "4"
+  SENSE: "2"
+  BANKNIFTY: "3"
+  FINNIFTY: "4"
+  BANKEX : "5"
 
 # Lot sizes for different instruments
 lot_sizes:
   NIFTY: 75
-  BANKNIFTY: 15
-  FINNIFTY: 40
-  SENSE: 50
+  BANKNIFTY: 35
+  FINNIFTY: 65
+  SENSE: 20
+  BANKEX : 30
 
 # Monthly expiry configurations
 monthly_expiry:
-  OCT: "25-10-14"
-  NOV: "25-11-28"
-  DEC: "25-12-26"
+  NIFTY:
+    OCT: "25-10-14"
+    NOV: "25-11-28"
+    DEC: "25-12-26"
+
+  BANKNIFTY:
+    OCT: "25-10-16"
+    NOV: "25-11-30"
+    DEC: "25-12-28"
+
+  FINNIFTY:
+    OCT: "25-10-15" 
+    NOV: "25-11-29"
+    DEC: "25-12-27"
+  
+  SENSE:
+    OCT: "25-10-13"
+    NOV: "25-11-27"
+    DEC: "25-12-25"
