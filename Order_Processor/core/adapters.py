@@ -256,8 +256,8 @@ class AlgotestAdapter(BaseAdapter):
         if lot_size is None:    
             raise ValueError(f"No lot size found for index: {order.index}")
         lot = order.quantity//lot_size
-        # Convert expiry date from "25-10-16" format to "251016"
-        expiry = ''.join(order.expiry.split('-'))
+        # Convert expiry date from "2025-10-16" format to "251016"
+        expiry = order.expiry.replace('-', '')[-6:] 
         instrument = f"{order.index}{expiry}{"C" if order.option_type.value == 1 else "P"}{order.strike}"
         try:
             symbol = f"{instrument} {order.order_type.value} {lot}"
