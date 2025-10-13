@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+#  "LOG_PATH": "C:/Program Files (x86)/Stoxxo/Logs",
+
 def load_config_from_json(config_path: str) -> Config:
     """Load configuration from JSON file"""
     try:
@@ -16,12 +18,9 @@ def load_config_from_json(config_path: str) -> Config:
         # Convert paths in config to proper Path objects
         if 'LOG_PATH' in config_data:
             config_data['LOG_PATH'] = Path(config_data['LOG_PATH'])
-        if 'TRADETRON_CONFIG' in config_data:
-            if 'INDEX_CSV' in config_data['TRADETRON_CONFIG']:
-                config_data['TRADETRON_CONFIG']['INDEX_CSV'] = Path(config_data['TRADETRON_CONFIG']['INDEX_CSV'])
-            if 'STRATEGY_CSV' in config_data['TRADETRON_CONFIG']:
-                config_data['TRADETRON_CONFIG']['STRATEGY_CSV'] = Path(config_data['TRADETRON_CONFIG']['STRATEGY_CSV'])
-        
+        if 'YAML_PATH' in config_data:
+            config_data['YAML_PATH'] = Path(config_data['YAML_PATH'])
+                
         # Create config instance with the loaded data
         return Config(**config_data)
     except Exception as e:

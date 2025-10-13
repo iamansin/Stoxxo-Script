@@ -1,6 +1,5 @@
 
 import asyncio
-import threading
 from pathlib import Path
 from typing import Optional, Set, Any, Dict, Tuple
 from datetime import datetime, time, timedelta
@@ -9,7 +8,7 @@ from core.order_processor import OrderProcessor
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 from loguru import logger
-from core.models import OrderObj, OrderType, Exchange, ProductType, OptionType, ExpiryMonth
+from core.models import OrderObj, OrderType, Exchange, ProductType, OptionType
 from core.cache_manager import VariableCache
 
 class TradingHoursValidator:
@@ -148,17 +147,10 @@ class OrderParser:
             else:
                 month_str = expiry_str
 
-            input_month = datetime.strptime(month_str, "%b").month
-
             # Map input month to current / next / next-to-next
-            if input_month == current_month:
-                return ExpiryMonth.CURRENT
-            elif input_month == (current_month % 12) + 1:
-                return ExpiryMonth.NEXT
-            elif input_month == ((current_month + 1) % 12) + 1:
-                return ExpiryMonth.NEXT2NEXT
-            else:
-                raise ValueError(f"Month '{month_str}' is not within expected 3-month range.")
+            
+            return self.cache_memory.get_monthly_expiry_date(month_str)
+            
         except Exception:
             raise ValueError(f"Unrecognized expiry format: '{expiry_str}'")
 
@@ -220,6 +212,9 @@ class OrderParser:
         strike = match.group("strike")
         opt_raw = match.group("option_type").upper()
         option_type = OptionType.CE if opt_raw in ("CE", "C") else OptionType.PE
+        
+        if any(not v for v in [index, expiry, strike, option_type]):
+            raise ValueError(f"Missing components in symbol: {symbol_str}")
 
         return index, expiry, strike, option_type
 
@@ -292,14 +287,13 @@ class OrderParser:
             # Parse timestamps with millisecond precision
             actual_time = self._parse_datetime(timestamp)
             parse_time = datetime.now()
-            
             # Create OrderObj
             order = OrderObj(
                 order_id=details.get('Leg ID'),
                 strategy_tag=strategy,
                 index=index,
                 strike=strike,
-                quantity=details['Qty'],
+                quantity=int(details['Qty']),
                 expiry=expiry,
                 order_type=OrderType.BUY if details['Txn'] == 'BUY' else OrderType.SELL,
                 exchange=Exchange.NFO,  # Assuming NFO for now
@@ -325,7 +319,7 @@ class OrderParser:
         """Validate the created order"""
         try:
             logger.debug(f"Validating order: {order}")
-            quantity = int(order.quantity)
+            quantity = order.quantity
             if not (self.min_quantity <= quantity <= self.max_quantity):
                 logger.error(f"Invalid quantity: {quantity}")
                 return False

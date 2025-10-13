@@ -1,0 +1,38 @@
+
+# Strategy configurations
+strategies:
+  - name: "SIM1"
+    tradetron_urls:
+      - "https://api.tradetron.tech/api?auth-token=4f182693-e455-40bc-902a-0498645277d3"
+    algotest_urls:
+      - "https://orders.algotest.in/webhook/tv/tk-trade?token=US8CD3R2JSpWWvRGbfwcYCgHRb8w8BFh&tag=68eb4e7474d39905b8d6e20c"
+    active: true
+
+  - name: "NIFTY_Strategy"
+    tradetron_urls:
+      - "https://example.com/strategy2"
+      - "https://example.com/strategy2"
+      - "https://example.com/strategy2"
+    algotest_urls:
+      - "https://example.com/strategy2_algo"
+    active: false
+
+# Index mappings
+index_mappings:
+  NIFTY: "1"
+  BANKNIFTY: "2"
+  FINNIFTY: "3"
+  SENSE: "4"
+
+# Lot sizes for different instruments
+lot_sizes:
+  NIFTY: 75
+  BANKNIFTY: 15
+  FINNIFTY: 40
+  SENSE: 50
+
+# Monthly expiry configurations
+monthly_expiry:
+  OCT: "25-10-14"
+  NOV: "25-11-28"
+  DEC: "25-12-26"

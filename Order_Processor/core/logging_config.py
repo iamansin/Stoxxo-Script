@@ -142,15 +142,23 @@ def setup_logging(
     # The {time} placeholder ensures logs are written to the correct daily folder
     log_dir_format = Path(base_log_dir) / "{time:YYYY-MM-DD}"
     
-    # Initialize processors
+    # Initialize processors with specific console settings
     order_processor = OrderLogProcessor(base_log_dir, provider=None)  # Generic orders
     provider_processors = {
         'tradetron': OrderLogProcessor(base_log_dir, 'tradetron'),
-        'algotrade': OrderLogProcessor(base_log_dir, 'algotrade')
+        'algotest': OrderLogProcessor(base_log_dir, 'algotest')
     }
     
+    # Add sink for console output (only for non-provider logs)
+    if enable_console:
+        logger.add(
+            sys.stdout,
+            level=log_level,
+            filter=lambda record: record.get("extra", {}).get("console", True)
+        )
+    
     # ========================================================================
-    # SINK FUNCTIONS - These intercept log messages and process them
+    # SINK FUNCTIONS - These intercept log messages and procs them
     # ========================================================================
     
     def create_provider_sink(processor, provider_name):

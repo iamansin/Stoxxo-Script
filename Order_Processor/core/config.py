@@ -9,25 +9,14 @@ from typing import Dict, Any
 
 class AdapterConfig(BaseModel):
     """Configuration for adapters"""
-    BASE_URL: Optional[str] = None
     TIMEOUT: Optional[int] = 10  # seconds
-    
-    class Config:
-        json_encoders = {
-            Path: str
-        }
 
 class TradetronConfig(AdapterConfig): 
-    BASE_URL: Optional[str] = 'https://api.tradetron.tech/api'
     TIMEOUT: Optional[int] = 10
-    INDEX_CSV: Path = Field(default=Path('tradetron_index_mapping.csv'))
-    STRATEGY_CSV: Path = Field(default=Path('tradetron_strategy_mapping.csv'))
+    BASE_URL: Optional[str] = "https://api.tradetron.tech/api"
     
-    @validator('INDEX_CSV', 'STRATEGY_CSV', pre=True)
-    def validate_path(cls, v):
-        if isinstance(v, str):
-            return Path(v)
-        return v
+class AlgotestConfig(AdapterConfig): 
+    TIMEOUT: Optional[int] = 10
 
 class Config(BaseModel):
     """Central configuration for the system"""
@@ -48,11 +37,12 @@ class Config(BaseModel):
 
     # Platform configurations
     ENABLE_TRADETRON: bool = Field(default=True, description="Enable/disable Tradetron integration")
-    ENABLE_ALGOBULLS: bool = Field(default=False, description="Enable/disable Algobulls integration")
+    ENABLE_ALGOTEST: bool = Field(default=False, description="Enable/disable Algobulls integration")
     
     TRADETRON_CONFIG: TradetronConfig = Field(default_factory=TradetronConfig, description="Tradetron specific configuration")
-    ALGOTEST_CONFIG: Optional[AdapterConfig] = Field(default=None, description="Algotest specific configuration")
+    ALGOTEST_CONFIG: AlgotestConfig = Field(default_factory=AlgotestConfig, description="Algotest specific configuration")
 
+    YAML_PATH: Path = Field(default=Path('config.yaml'), description="Path to YAML configuration file")
     # Trading hours (IST timezone)
     allowed_weekdays: Set[int] = Field(
         default_factory=lambda: {0, 1, 2, 3, 4},

@@ -1,97 +1,131 @@
 import os
-import csv
-from typing import Dict, Optional, Union
+import yaml
+from typing import Dict, Optional, Union, List
 from datetime import datetime
-import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv
 from core.models import OrderType, Providers
 from loguru import logger
-from core.config import TradetronConfig
-
+from core.config import Config
 class VariableCache:
     """
-    Fast in-memory cache for strategy tokens and index mappings.
-    Loads data from CSV files at startup and provides O(1) access.
+    Fast in-memory cache for strategy configurations and mappings.
+    Loads data from YAML config file at startup and provides O(1) access.
     """
 
-    def __init__(self):
+    def __init__(self, config : Config):
         load_dotenv()
-        self._strategy_tokens: Dict[tuple, str] = {}  # (strategy, provider) -> token
-        self._index_mappings: Dict[str, str] = {}  # (index, provider) -> value
-        self.active_strategy_map : Dict[str, str] = {}
-        self.provider_config = TradetronConfig()
+        self._strategy_urls: Dict[tuple, List[str]] = {}  # (strategy, provider) -> urls list
+        self._index_mappings: Dict[str, str] = {}  # index -> value
+        self.active_strategy_map: Dict[str, bool] = {}  # strategy -> active status
+        self.lot_size_mappings: Dict[str, int] = {}  # index -> lot size
+        self.monthly_expiry_mappings: Dict[str, str] = {}  # month code (e.g., 'OCT') -> expiry date
+        self.provider_config = config
         self._load_mappings()
 
     def _load_mappings(self):
-        """Load mappings from CSV files specified in environment variables"""
+        """Load all mappings from YAML configuration file"""
         try:
-            # Load strategy tokens
-            strategy_file = self.provider_config.STRATEGY_CSV
-            if strategy_file and Path(strategy_file).exists():
-                logger.info(f"Loading strategy mappings from: {strategy_file}")
-                with open(strategy_file, 'r') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        strategy = row['strategy']
-                        provider = Providers.TRADETRON.value  # Default to tradetron
-                        self.active_strategy_map[strategy] = row['active']
-                        token = row['token']
-                        self._strategy_tokens[(strategy, provider)] = token
-                        logger.info(f"Loaded strategy: {strategy} ({provider}) -> {token}")
-                
-                logger.info(f"Loaded {len(self._strategy_tokens)} strategy mappings")
-                logger.info(f"Active Strategies :--> { list(self.active_strategy_map.keys())}")
-            else:
-                logger.error(f"Strategy mapping file not found: {strategy_file}")
+            config_file = self.provider_config.YAML_PATH
+            if not Path(config_file).exists():
+                raise FileNotFoundError(f"Configuration file not found: {config_file}")
 
+            logger.info(f"Loading configurations from: {config_file}")
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+
+            if config is None:
+                raise ValueError("Failed to parse YAML file - file may be empty or malformed")
+
+            # Load strategy configurations
+            for strategy in config.get('strategies', []):
+                name = strategy['name']
+                self._strategy_urls[(name,Providers.TRADETRON)] = strategy.get('tradetron_urls', [])
+                self._strategy_urls[(name,Providers.ALGOTEST)] = strategy.get('algotest_urls', [])
+                self.active_strategy_map[name] = strategy.get('active', False)
+                logger.info(f"Loaded strategy: {name} with URLs - "
+                          f"Tradetron: {len(self._strategy_urls.get((name, Providers.TRADETRON), []))} "
+                          f"AlgoTest: {len(self._strategy_urls.get((name, Providers.ALGOTEST), []))}")
             # Load index mappings
-            index_file = self.provider_config.INDEX_CSV
-            if index_file and Path(index_file).exists():
-                logger.info(f"Loading index mappings from: {index_file}")
-                with open(index_file, 'r') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        index = row['index']
-                        value = row['value']
-                        self._index_mappings[index] = value
-                        logger.info(f"Loaded index: {index}) -> {value}")
-                
-                logger.info(f"Loaded {len(self._index_mappings)} index mappings")
-            else:
-                logger.error(f"Index mapping file not found: {index_file}")
-                raise "Not able to load cache memory"
+            self._index_mappings = config.get('index_mappings', {})
+            logger.info(f"Loaded {len(self._index_mappings)} index mappings")
 
+            # Load lot sizes
+            self.lot_size_mappings = config.get('lot_sizes', {})
+            logger.info(f"Loaded {len(self.lot_size_mappings)} lot size mappings")
+
+            # Load monthly expiry configurations
+            self.monthly_expiry_mappings = config.get('monthly_expiry', {})
+            logger.info(f"Loaded expiry mappings for {len(self.monthly_expiry_mappings)} months")
+
+            logger.info(f"Active Strategies: {[k for k, v in self.active_strategy_map.items() if v]}")
+
+        except yaml.YAMLError as e:
+            logger.error(f"Error parsing YAML file: {str(e)}")
+            raise
         except Exception as e:
-            logger.error(f"Error loading mappings: {e}")
+            logger.error(f"Error loading mappings: {str(e)}")
             raise
 
-    def get_strategy_token(self, strategy: str, provider: Providers) -> Optional[str]:
-        """Get token for a strategy. O(1) operation."""
-        # Try exact match first
-        key = (strategy, provider.value)
-        token = self._strategy_tokens.get(key)
+    def get_strategy_url(self, strategy: str, provider: Providers) -> Optional[Union[str, List[str]]]:
+        """
+        Get URLs for a strategy and provider. Returns either a single URL or list of URLs.
         
-        if token is None:
-            # Try fallback to default provider
-            fallback_key = (strategy, 'tradetron')
-            token = self._strategy_tokens.get(fallback_key)
+        Args:
+            strategy: Strategy name
+            provider: Provider enum (TRADETRON or ALGOTEST)
             
-            if token is None:
-                logger.error(f"No token found for strategy: {strategy} with provider: {provider.value}")
-            else:
-                logger.debug(f"Using fallback token for strategy: {strategy}")
-                
-        return token
+        Returns:
+            - List of URLs if multiple URLs are configured
+            - Single URL string if only one URL is configured
+            - None if no URLs are found
+        """
+        key = (strategy, provider)
+        urls = self._strategy_urls.get(key, [])
+        
+        if not urls:
+            logger.error(f"No URLs found for strategy: {strategy} with provider: {provider.value}")
+            return None
+            
+        return urls[0] if len(urls) == 1 else urls
+    
+    def get_lot_size(self, index: str) -> Union[int, None]:
+        
+        lot_size = self.lot_size_mappings.get(index)
+        if lot_size is None:
+            logger.error(f"No lot size found for strategy: {index}")
+            return None
+        if not isinstance(lot_size, int):
+            return int(lot_size)
+        
+        return lot_size
+    
+    def get_monthly_expiry_date(self, month: str) -> Optional[Dict[str, str]]:
+        """
+        Get expiry information for a given month code (e.g., 'OCT', 'NOV', etc.)
+        Returns a dictionary with keys: 'date' and 'next_month'
+        
+        Args:
+            month_code: Three letter month code in uppercase (e.g., 'OCT', 'NOV')
+            
+        Returns:
+            Dictionary containing expiry date and next month code, or None if not found
+        """
+        expiry_data = self.monthly_expiry_mappings.get(month)
+        if expiry_data is None:
+            logger.error(f"No expiry mappings found for month: {month}")
+        return str(expiry_data)
 
-    def get_index_mapping(self, index: str , order_type: OrderType) -> Optional[str]:
-        """Get mapped value for an index. O(1) operation."""
-        
+    def get_index_mapping(self, index: str, order_type: OrderType) -> Optional[str]:
+        """
+        Get mapped value for an index. O(1) operation.
+        Applies sign based on order type (negative for SELL orders)
+        """
         value = self._index_mappings.get(index)
-        
         if value is None:
             logger.error(f"No mapping found for index: {index}")
             return None
+            
         try:
             # Convert to integer for manipulation
             numeric_value = int(value)
@@ -107,13 +141,16 @@ class VariableCache:
             return None
 
     def strategy_is_active(self, strategy_key : str) -> bool:
-        return True if self.active_strategy_map.get(strategy_key, False).lower() == 'true' else False
-
+        is_active = self.active_strategy_map.get(strategy_key, False)
+        logger.info(f"Strategy {strategy_key} active status: {is_active} (type: {type(is_active)})")
+        if isinstance(is_active, bool):
+            return is_active
+        return True if str(is_active).lower() == 'true' else False
+    
     def active_strategies(self):
         return self.active_strategy_map.keys()
 
     def reload(self):
         """Reload mappings from files"""
-        self._strategy_tokens.clear()
         self._index_mappings.clear()
         self._load_mappings()
