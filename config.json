@@ -2,22 +2,22 @@
   "MAX_WORKERS": 4,
   "QUEUE_SIZE": 10000,
   "BATCH_SIZE": 50,
-  "LOG_PATH": "C:/Users/AMAN/Desktop/stoxxo/test_folder",
+  "LOG_PATH": "C:/Program Files (x86)/Stoxxo/Logs",
   "LOG_FILE_PATTERN": "*.csv",
   "RETRY_ATTEMPTS": 3,
   "RETRY_DELAY": 1.0,
   "PROCESSING_TIMEOUT": 30,
   "YAML_PATH": "C:/Users/AMAN/Desktop/stoxxo/config.yaml",
   "ENABLE_TRADETRON": true,
-  "ENABLE_ALGOTEST": true,
+  "ENABLE_ALGOTEST": false,
   "TRADETRON_CONFIG": {
     "TIMEOUT": 10
   },
   "allowed_weekdays": [0, 1, 2, 3, 4, 5],
-  "trading_start_time": "01:15",
-  "trading_end_time": "18:30",
-  "enable_premarket": false,
+  "trading_start_time": "09:15",
+  "trading_end_time": "15:30",
+  "enable_premarket": true,
   "premarket_start": "09:00",
-  "enable_postmarket": false,
+  "enable_postmarket": true,
   "postmarket_end": "16:00"
 }

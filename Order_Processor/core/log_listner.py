@@ -96,7 +96,7 @@ class OrderParser:
         self.cache_memory = cache_memory
         # self.queue = queue or asyncio.Queue()
 
-    def _format_expiry(self, expiry_str : str):
+    def _format_expiry(self, expiry_str : str, index: str) -> str:
         """
         Parses expiry strings into yyyy-mm-dd format.
 
@@ -149,7 +149,7 @@ class OrderParser:
 
             # Map input month to current / next / next-to-next
             
-            return self.cache_memory.get_monthly_expiry_date(month_str)
+            return self.cache_memory.get_monthly_expiry_date(month_str, index)
             
         except Exception:
             raise ValueError(f"Unrecognized expiry format: '{expiry_str}'")
@@ -208,7 +208,7 @@ class OrderParser:
         else:
             raise ValueError(f"Invalid expiry format in symbol: {symbol_str}")
 
-        expiry = self._format_expiry(expiry)
+        expiry = self._format_expiry(expiry, index)
         strike = match.group("strike")
         opt_raw = match.group("option_type").upper()
         option_type = OptionType.CE if opt_raw in ("CE", "C") else OptionType.PE

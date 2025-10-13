@@ -58,6 +58,7 @@ class OrderObj(BaseModel):
     end_to_end_latency : int = None  # in milliseconds(sent_time - actual_time)
     status : OrderStatus = OrderStatus.PENDING  
     error_message : Optional[str] = None
+    retry_count : int = 0
 
     def __init__(self, **data: Any):
         if 'order_id' not in data:

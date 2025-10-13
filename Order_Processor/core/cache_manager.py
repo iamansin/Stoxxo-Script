@@ -19,7 +19,7 @@ class VariableCache:
         self._index_mappings: Dict[str, str] = {}  # index -> value
         self.active_strategy_map: Dict[str, bool] = {}  # strategy -> active status
         self.lot_size_mappings: Dict[str, int] = {}  # index -> lot size
-        self.monthly_expiry_mappings: Dict[str, str] = {}  # month code (e.g., 'OCT') -> expiry date
+        self.monthly_expiry_mappings: Dict[str, Dict[str, str]] = {}  # index -> {month -> expiry_date}
         self.provider_config = config
         self._load_mappings()
 
@@ -100,21 +100,28 @@ class VariableCache:
         
         return lot_size
     
-    def get_monthly_expiry_date(self, month: str) -> Optional[Dict[str, str]]:
+    def get_monthly_expiry_date(self, index: str, month: str) -> Optional[str]:
         """
-        Get expiry information for a given month code (e.g., 'OCT', 'NOV', etc.)
-        Returns a dictionary with keys: 'date' and 'next_month'
+        Get expiry date for a specific index and month.
         
         Args:
-            month_code: Three letter month code in uppercase (e.g., 'OCT', 'NOV')
+            index: Index name (e.g., 'NIFTY', 'BANKNIFTY')
+            month: Three letter month code in uppercase (e.g., 'OCT', 'NOV')
             
         Returns:
-            Dictionary containing expiry date and next month code, or None if not found
+            Expiry date string (e.g., "25-10-14") or None if not found
         """
-        expiry_data = self.monthly_expiry_mappings.get(month)
-        if expiry_data is None:
-            logger.error(f"No expiry mappings found for month: {month}")
-        return str(expiry_data)
+        index_data = self.monthly_expiry_mappings.get(index, None)
+        if index_data is None:
+            logger.error(f"No expiry mappings found for index: {index}")
+            return None
+            
+        expiry_date = index_data.get(month.upper())
+        if expiry_date is None:
+            logger.error(f"No expiry date found for index {index} and month {month}")
+            return None
+            
+        return expiry_date
 
     def get_index_mapping(self, index: str, order_type: OrderType) -> Optional[str]:
         """
@@ -134,7 +141,7 @@ class VariableCache:
             if order_type == OrderType.SELL:
                 numeric_value *= -1
                 
-            return str(numeric_value)  # Convert back to string as that's what the API expects
+            return numeric_value  # Convert back to string as that's what the API expects
             
         except ValueError as e:
             logger.error(f"Error converting mapping value '{value}' to integer for index: {index}")
