@@ -149,7 +149,7 @@ class OrderParser:
 
             # Map input month to current / next / next-to-next
             
-            return self.cache_memory.get_monthly_expiry_date(month_str, index)
+            return self.cache_memory.get_monthly_expiry_date(index, month_str)
             
         except Exception:
             raise ValueError(f"Unrecognized expiry format: '{expiry_str}'")

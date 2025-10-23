@@ -1,7 +1,6 @@
 import os
 import asyncio
 from core.adapters import BaseAdapter
-import logging
 from typing import List, Dict, Any, Optional
 from core.models import OrderObj
 from loguru import logger
@@ -23,7 +22,7 @@ class OrderProcessor:
     async def add_order(self, batch: Dict[str, Any]):
         """Add order to async queue"""
         try:
-            logger.info(f"Adding order batch to queue: {len(batch)}")
+            logger.debug(f"Adding order batch to queue: {len(batch)}")
             await self.order_queue.put(batch)
         except asyncio.QueueFull:
             logger.warning("Order queue is full, dropping order")
@@ -45,7 +44,7 @@ class OrderProcessor:
                     except asyncio.TimeoutError:
                         continue  # Allows the loop to check self.running
 
-                    logger.info(f"Processing batch of {len(batch)} orders")
+                    logger.debug(f"Processing batch of {len(batch)} orders")
                     task = asyncio.create_task(self._dispatch_and_log(batch))
                     self._processing_tasks.add(task)
                     task.add_done_callback(self._processing_tasks.discard)

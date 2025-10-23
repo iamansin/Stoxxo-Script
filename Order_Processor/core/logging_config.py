@@ -51,7 +51,7 @@ class OrderLogProcessor:
                 writer = csv.writer(f)
                 writer.writerow([
                     'Log_time','Stoxxo_Timestamp', 'Stoxxo_Latency', 'Recieve_Timestamp', 
-                    'Sent_Timestamp', 'Application_Latency', 'Pipeline_Latency', 'Strategy',
+                    'Sent_Timestamp', 'Application_Latency', 'End_to_End_Latency', 'Strategy',
                     'Stoxxo_Order', 'order_summary', 'Mapped_order', 'order_status', 'error_message'  
                 ])
     
@@ -89,7 +89,7 @@ class OrderLogProcessor:
                     record['time'].strftime('%Y-%m-%d %H:%M:%S.%f')), # Application_Timestamp
                 data.get('sent_timestamp', 'None'),                    # Sent_Timestamp
                 data.get('application_latency', 'None'),              # Application_Latency
-                data.get('pipeline_latency', 'None'),                  # Pipeline_Latency
+                data.get('end_to_end_Latency', 'None'),                  # end_to_end_Latency
                 data.get('strategy', 'None'),                            # Strategy
                 data.get('stoxxo_order', 'None'),        # Stoxxo_Order as JSON string
                 data.get('order_summary', 'None'),                    # order_summary
@@ -153,6 +153,7 @@ def setup_logging(
     if enable_console:
         logger.add(
             sys.stdout,
+            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
             level=log_level,
             filter=lambda record: record.get("extra", {}).get("console", True)
         )
@@ -271,18 +272,6 @@ def setup_logging(
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {message}",
         filter=lambda record: "order" in record["extra"]
     )
-    
-    # ========================================================================
-    # 5. CONSOLE OUTPUT (optional, for development)
-    # ========================================================================
-    if enable_console:
-        logger.add(
-            sys.stderr,
-            format="<green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> | <level>{message}</level>",
-            level=log_level,
-            enqueue=True,
-            colorize=True,
-        )
     
     logger.info(f"Logging initialized | Level: {log_level} | Base Directory: {base_log_dir} (IST)")
 

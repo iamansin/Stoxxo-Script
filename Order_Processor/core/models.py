@@ -89,17 +89,21 @@ class OrderObj(BaseModel):
             # Calculate latencies only if sent_time exists and is valid
             if self.sent_time and isinstance(self.sent_time, datetime):
                 end_to_end_latency = int((self.sent_time - self.actual_time).total_seconds() * 1000)
-                pipeline_latency = int((self.sent_time - self.parse_time).total_seconds() * 1000)
+                # Calculate application latency (time spent in application processing)
+                # Only consider the time between parse_time and sent_time
+                time_diff = (self.sent_time - self.parse_time).total_seconds()
+                application_latency = int(time_diff * 1000) if time_diff >= 0 else 0
             else:
+                logger.warning(f"Sent time is not set or invalid for order {self.order_id}. Latencies will be logged as None.")
                 end_to_end_latency = None
-                pipeline_latency = None
+                application_latency = None
 
             info = json.dumps({
-                "stoxxo_timestamp": self.actual_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                "stoxxo_timestamp": self.actual_time.strftime('%Y-%m-%d %H:%M:%S.%f'),  # Include full microseconds
                 "stoxxo_latency": f"{self.processing_gap}ms",
-                "receive_timestamp": self.parse_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
-                "sent_timestamp": self.sent_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3] if self.sent_time else None,
-                "pipeline_latency": f"{pipeline_latency}ms" if pipeline_latency is not None else None,
+                "receive_timestamp": self.parse_time.strftime('%Y-%m-%d %H:%M:%S.%f'),  # Include full microseconds
+                "sent_timestamp": self.sent_time.strftime('%Y-%m-%d %H:%M:%S.%f') if self.sent_time else None,  # Include full microseconds
+                "application_latency": f"{application_latency}ms" if application_latency is not None else None,
                 "end_to_end_latency": f"{end_to_end_latency}ms" if end_to_end_latency is not None else None,
                 "stoxxo_order": self.stoxxo_order,
                 "strategy" : self.strategy_tag,
@@ -115,7 +119,7 @@ class OrderObj(BaseModel):
                 logger.bind(algotest=True, console=False).info(info)
 
             # Log to general order file with console output
-            logger.bind(order=True, console=True).info(info)
+            logger.bind(order=True, console=False).info(info)
             return 
         
         except Exception as e:

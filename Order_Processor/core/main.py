@@ -11,11 +11,11 @@ from core.log_listner import LogMonitor
 from core.order_processor import OrderProcessor
 from core.adapters import TradetronAdapter, AlgotestAdapter
 from core.config import Config, TradetronConfig
-from loguru import logger
 from core.logging_config import setup_logging
 from core.cache_manager import VariableCache
 # Setup logging
 setup_logging()
+from loguru import logger
 
 
 
@@ -72,7 +72,7 @@ class OrderProcessingSystem:
         """Register trading platform adapters"""
         if self.config.ENABLE_TRADETRON:
             self.order_processor.register_adapter(
-                TradetronAdapter(TradetronConfig(), self.cache_memory)
+                TradetronAdapter(self.config.TRADETRON_CONFIG, self.cache_memory)
             )
         
         if self.config.ENABLE_ALGOTEST:
