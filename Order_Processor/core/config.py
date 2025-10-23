@@ -9,14 +9,68 @@ from typing import Dict, Any
 
 class AdapterConfig(BaseModel):
     """Configuration for adapters"""
-    TIMEOUT: Optional[int] = 10  # seconds
+    TIMEOUT: Optional[int] = None # seconds
+    BASE_URL: Optional[str] = None
+    GROUP_LIMIT: Optional[int] = 10
+    METHOD: str = "GET"
+    RATE_LIMITER_ACTIVE: bool = False
+    ORDER_DELAY_SECONDS: Optional[float] = None
+    GROUPING_ENABLED: bool = False
+    RATE_LIMIT: Optional[int]= None
+    RATE_LIMIT_PERIOD: Optional[int] = None
+    COUNTER_SIZE: Optional[int] = None
+    
+    @validator('ORDER_DELAY_SECONDS', pre=True)
+    def validate_order_delay(cls, v):
+        # Normalize None
+        if v is None:
+            return None
+
+        # If value is a string, try to parse to float (handles '0', '0.0')
+        if isinstance(v, str):
+            v = v.strip()
+            if v == "":
+                return None
+            try:
+                v = float(v)
+            except ValueError:
+                raise ValueError(f"ORDER_DELAY_SECONDS must be a number or null, got: {v}")
+
+        # At this point, v should be numeric
+        if isinstance(v, (int, float)):
+            # Treat explicit zero (0 or 0.0) as None per requirement
+            if float(v) == 0.0:
+                return None
+            if v >= 0.0:
+                return float(v)
+
+        # Fallback: invalid type
+        raise ValueError(f"ORDER_DELAY_SECONDS must be a non-negative number or null, got: {v}")
+        
 
 class TradetronConfig(AdapterConfig): 
-    TIMEOUT: Optional[int] = 10
-    BASE_URL: Optional[str] = "https://api.tradetron.tech/api"
+    """Tradetron-specific configuration"""
+    BASE_URL: str = "https://api.tradetron.tech/api"
+    METHOD: str = "GET"
+    GROUPING_ENABLED: bool = True
+    GROUP_LIMIT: int = 40
+    RATE_LIMITER_ACTIVE: bool = True
+    ORDER_DELAY_SECONDS: Optional[float] = 1.0
+    COUNTER_SIZE: int = None
+    RATE_LIMIT: int = None
+    RATE_LIMIT_PERIOD: int = None
+    
     
 class AlgotestConfig(AdapterConfig): 
-    TIMEOUT: Optional[int] = 10
+    """Algotest-specific configuration"""
+    METHOD: str = "POST"
+    GROUP_LIMIT: Optional[int] = None
+    RATE_LIMITER_ACTIVE: bool = False
+    ORDER_DELAY_SECONDS: Optional[float] = None
+    GROUPING_ENABLED: bool = False
+    RATE_LIMIT: Optional[int]= None
+    RATE_LIMIT_PERIOD: Optional[int] = None
+    COUNTER_SIZE: Optional[int] = None
 
 class Config(BaseModel):
     """Central configuration for the system"""
@@ -39,6 +93,7 @@ class Config(BaseModel):
     ENABLE_TRADETRON: bool = Field(default=True, description="Enable/disable Tradetron integration")
     ENABLE_ALGOTEST: bool = Field(default=False, description="Enable/disable Algobulls integration")
     
+
     TRADETRON_CONFIG: TradetronConfig = Field(default_factory=TradetronConfig, description="Tradetron specific configuration")
     ALGOTEST_CONFIG: AlgotestConfig = Field(default_factory=AlgotestConfig, description="Algotest specific configuration")
 
