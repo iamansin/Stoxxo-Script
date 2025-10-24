@@ -18,6 +18,7 @@ class ConfigManager:
     def __init__(self):
         self.config_json_path = "config.json"
         self.config_yaml_path = "config.yaml"
+        self.pid_file_path = Path("app.pid")
         
     def load_json_config(self) -> Dict[str, Any]:
         """Load JSON configuration with error handling"""
@@ -157,74 +158,96 @@ class ConfigManager:
             "monthly_expiry": {}
         }
     
-    def is_app_running(self) -> bool:
-        """Check if the main application is running"""
-        if 'app_pid' in st.session_state and st.session_state.app_pid:
-            try:
-                process = psutil.Process(st.session_state.app_pid)
-                return process.is_running()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                return False
-        return False
-    
+    # --- NEW HELPER METHOD ---
+    def _get_pid_from_file(self) -> Optional[int]:
+        """Reads the PID from the PID file. Returns None if not found or invalid."""
+        try:
+            if self.pid_file_path.exists():
+                with self.pid_file_path.open('r') as f:
+                    pid_str = f.read().strip()
+                    if pid_str:
+                        return int(pid_str)
+        except (IOError, ValueError):
+            # If file is unreadable or content is not an integer, we'll treat it as invalid.
+            return None
+        return None
 
+    # --- NEW HELPER METHOD ---
+    def _cleanup_pid_file(self):
+        """Removes the PID file safely if it exists."""
+        try:
+            if self.pid_file_path.exists():
+                self.pid_file_path.unlink()
+            # Also clear the temporary session state
+            st.session_state.app_pid = None
+            st.session_state.app_start_time = None
+        except OSError:
+            pass  # Ignore errors if the file is already gone
+
+    # --- HEAVILY MODIFIED: The core logic now relies on the PID file ---
+    def is_app_running(self) -> bool:
+        """
+        Checks if the application is running by reading the PID file and verifying the process.
+        This is the new "source of truth".
+        """
+        pid = self._get_pid_from_file()
+        if not pid:
+            return False
+        
+        try:
+            process = psutil.Process(pid)
+            # Extra check: Make sure the running process is actually our script.
+            # This prevents a stale PID file from matching a new, unrelated process.
+            if "app.py" in " ".join(process.cmdline()):
+                st.session_state.app_pid = pid  # Keep session_state in sync for the UI
+                return process.is_running()
+            else:
+                # The PID exists, but it's not our app. This is a stale PID file.
+                self._cleanup_pid_file()
+                return False
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            # The process with that PID is gone. The PID file is stale.
+            self._cleanup_pid_file()
+            return False
+
+    # --- MODIFIED: Writes the PID to the file on successful start ---
     def start_application(self, json_config_path: str) -> bool:
-        """Start the main application in a separate process"""
+        """Starts the main application and creates a PID file to track it."""
         try:
             if self.is_app_running():
                 st.warning("Application is already running!")
                 return False
 
-            # --- Create Absolute Paths to fix the issue ---
-            # Get the directory where this script (config_manager.py) is running.
             script_dir = Path(__file__).resolve().parent
-
-            # Create absolute paths for the app script and the config file.
-            # This makes the command robust, regardless of the working directory.
             app_script_path = script_dir / "Order_Processor" / "app.py"
             abs_json_config_path = script_dir / json_config_path
 
-            # Add a check to ensure the script actually exists before running
             if not app_script_path.exists():
-                st.error(f"FATAL: Application script not found at the path: {app_script_path}")
+                st.error(f"FATAL: Application script not found at: {app_script_path}")
                 return False
             
-            # --- Build the Command with Absolute Paths ---
-            # Use sys.executable to guarantee we use the same Python environment (e.g., .venv)
-            cmd = [
-                sys.executable,
-                str(app_script_path),
-                str(abs_json_config_path)
-            ]
+            cmd = [sys.executable, str(app_script_path), str(abs_json_config_path)]
 
-            # Start process in background
-            if os.name == 'nt':  # Windows
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-                    text=True # Decode stdout/stderr as text for easier debugging
-                )
-            else:  # Unix-like
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    start_new_session=True,
-                    text=True
-                )
+            # Handle process creation for different OS
+            popen_kwargs = {'stdout': subprocess.PIPE, 'stderr': subprocess.PIPE, 'text': True}
+            if os.name == 'nt':
+                popen_kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                popen_kwargs['start_new_session'] = True
+
+            process = subprocess.Popen(cmd, **popen_kwargs)
             
-            # --- DEBUGGING BLOCK: Check for immediate errors ---
-            time.sleep(2) # Give the app a moment to start or fail
-            
-            # Check if the process died immediately
+            time.sleep(2)  # Give the app a moment to start or fail
+
             if process.poll() is not None:
                 stdout, stderr = process.communicate()
                 st.error("Application failed to start. See error from subprocess below:")
                 st.code(f"STDERR:\n{stderr}\n\nSTDOUT:\n{stdout}", language='bash')
                 return False
-            # --- END DEBUGGING BLOCK ---
+
+            # --- CRITICAL CHANGE: Write PID to file on success ---
+            with self.pid_file_path.open('w') as f:
+                f.write(str(process.pid))
 
             st.session_state.app_pid = process.pid
             st.session_state.app_start_time = datetime.now()
@@ -234,26 +257,31 @@ class ConfigManager:
             st.error(f"An exception occurred while trying to start the application: {e}")
             return False
     
+        # --- MODIFIED: Reads the PID from the file and deletes it on successful stop ---
     def stop_application(self) -> bool:
-        """Stop the main application"""
+        """Stops the main application using the PID from the PID file."""
+        pid = self._get_pid_from_file()
+
+        if not pid or not self.is_app_running():
+            st.warning("Application is not running or PID file is missing!")
+            self._cleanup_pid_file()  # Clean up just in case the file is stale
+            return False
+        
         try:
-            if not self.is_app_running():
-                st.warning("Application is not running!")
-                return False
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)], capture_output=True)
+            else:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
             
-            if 'app_pid' in st.session_state and st.session_state.app_pid:
-                if os.name == 'nt':  # Windows
-                    subprocess.run(
-                        ['taskkill', '/F', '/T', '/PID', str(st.session_state.app_pid)],
-                        capture_output=True
-                    )
-                else:  # Unix-like
-                    os.killpg(os.getpgid(st.session_state.app_pid), signal.SIGTERM)
+            # --- CRITICAL CHANGE: Clean up the PID file after stopping ---
+            self._cleanup_pid_file()
+            st.success("Process terminated and PID file cleaned up.")
+            return True
                 
-                st.session_state.app_pid = None
-                st.session_state.app_start_time = None
-                return True
-                
+        except (ProcessLookupError, psutil.NoSuchProcess):
+            st.warning("Process was already gone. Cleaning up PID file.")
+            self._cleanup_pid_file()
+            return True
         except Exception as e:
             st.error(f"Error stopping application: {e}")
             return False
