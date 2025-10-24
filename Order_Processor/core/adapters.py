@@ -608,6 +608,7 @@ class BaseAdapter:
 
             while retry_count <= max_retries:
                 try:
+                    logger.info(f"{self.provider} - Sending batch order to URL: {url}")
                     if retry_count > 0:
                         logger.warning(
                             f"{self.provider} - Retry attempt {retry_count} for batch order"
@@ -728,6 +729,7 @@ class BaseAdapter:
 
         while retry_count <= max_retries:
             try:
+                logger.info(f"{self.provider} - Sending single order {order.order_id} to URL: {url}")
                 is_retry = retry_count > 0
                 
                 if is_retry:
