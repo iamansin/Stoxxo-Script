@@ -454,13 +454,16 @@ class GridLogEventHandler(FileSystemEventHandler):
                     logger.error(f"Error processing line in {file_path.name}: {e}")
                     continue
 
-            # If we have orders, send them to processor
-            if orders:
+            # Filter out any None orders that might have resulted from inactive strategies or parsing errors
+            valid_orders = [order for order in orders if order is not None]
+
+            # If we have valid orders, send them to processor
+            if valid_orders:
                 self.event_loop.call_soon_threadsafe(
                     asyncio.create_task,
-                    self.order_processor.add_order(orders)
+                    self.order_processor.add_order(valid_orders)
                 )
-                logger.info(f"Queued {len(orders)} orders for processing from {file_path.name}")
+                logger.info(f"Queued {len(valid_orders)} orders for processing from {file_path.name}")
 
         except Exception as e:
             logger.error(f"Error in file processing: {file_path.name} - {e}")

@@ -5,6 +5,7 @@ from core.config import Config
 import signal
 import json
 import sys
+import platform
 from pathlib import Path
 
 #  "LOG_PATH": "C:/Program Files (x86)/Stoxxo/Logs",
@@ -28,11 +29,10 @@ def load_config_from_json(config_path: str) -> Config:
         raise
 
 async def main():
-    """Main entry point"""
+    """Main entry point for the application"""
     # Check for config file argument
     if len(sys.argv) < 2:
-        logger.error("Config file path argument is required!")
-        logger.info("Usage: python app.py /path/to/config.json")
+        logger.error("Config file path argument is required! Usage: python app.py /path/to/config.json")
         sys.exit(1)
     
     config_path = sys.argv[1]
@@ -45,43 +45,50 @@ async def main():
         logger.error(f"Failed to load configuration: {e}")
         sys.exit(1)
     
+    # --- 1. Create the system and a shutdown event ---
     system = OrderProcessingSystem(config)
-    
-    stop_event = asyncio.Event()
+    shutdown_event = asyncio.Event()
 
-    def signal_handler(signum, frame):
-        # Use call_soon_threadsafe to safely set the event from a signal handler
-        asyncio.get_event_loop().call_soon_threadsafe(stop_event.set)
+    # Get the current, running event loop
+    loop = asyncio.get_running_loop()
 
-    # Register signal handlers the traditional way
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    # --- 2. Gracefully handle shutdown signals ---
+    # The 'set_event' function will be called when a signal is received
+    def set_event():
+        logger.info("Shutdown signal received. Initiating graceful shutdown...")
+        shutdown_event.set()
 
-    logger.info("System starting... Press Ctrl+C to exit.")
-    
-    system_task = asyncio.create_task(system.start())
-    
+    # On Windows, loop.add_signal_handler is not supported, so we use the standard signal module.
+    # On Linux/macOS, we use the asyncio-native handler.
+    if platform.system() == "Windows":
+        # The old way is the correct way on Windows
+        signal.signal(signal.SIGINT, lambda s, f: set_event())
+        signal.signal(signal.SIGTERM, lambda s, f: set_event())
+    else:
+        # The modern, asyncio-native way for Unix-like systems
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, set_event)
+
+    # --- 3. Use a try/finally block to guarantee cleanup ---
     try:
-        # Wait for either the system to crash or a shutdown signal
-        await asyncio.wait([
-            system_task,
-            asyncio.create_task(stop_event.wait()) 
-        ], return_when=asyncio.FIRST_COMPLETED)
+        logger.info("System starting... Press Ctrl+C to exit.")
+        # Start the main application task
+        await system.start()
+
+        # This will pause the main function here indefinitely until the event is set
+        await shutdown_event.wait()
+
     except Exception as e:
-        logger.error(f"Error during execution: {e}")
+        logger.error(f"An unexpected error occurred in the main task: {e}")
     finally:
-        logger.info("Shutdown signal received. Cleaning up...")
-        
-        # Graceful shutdown
+        # This block is GUARANTEED to run on exit or error
+        logger.info("Cleaning up resources...")
         await system.stop()
-        
-        # Cancel the main task to ensure it exits
-        if not system_task.done():
-            system_task.cancel()
-            try:
-                await system_task
-            except asyncio.CancelledError:
-                logger.info("System task cancelled successfully.")
+        logger.info("Application has been shut down.")
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Application interrupted by user.")
