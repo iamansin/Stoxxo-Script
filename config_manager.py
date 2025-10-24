@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 import time
 import sys
 from datetime import datetime
+import bcrypt
 import copy
 
 class ConfigManager:
@@ -19,6 +20,7 @@ class ConfigManager:
         self.config_json_path = "config.json"
         self.config_yaml_path = "config.yaml"
         self.pid_file_path = Path("app.pid")
+        self.auth_json_path = Path("auth_config.json")  # New path for auth config
         
     def load_json_config(self) -> Dict[str, Any]:
         """Load JSON configuration with error handling"""
@@ -35,6 +37,34 @@ class ConfigManager:
         except Exception as e:
             st.error(f"Error loading JSON config: {e}")
             return self._get_default_json_config()
+        
+    # --- NEW METHOD: Load Hashed Credentials ---
+    def load_auth_config(self) -> Dict[str, str]:
+        """Load authentication credentials (username: hashed_password)"""
+        try:
+            if not Path(self.auth_json_path).exists():
+                # Default Hashed Credential for 'admin' with password 'password123'
+                default_hash = bcrypt.hashpw("password123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                default_config = {"admin": default_hash}
+                self.save_auth_config(default_config)
+                return default_config
+            
+            with open(self.auth_json_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            st.error(f"Error loading Auth config: {e}")
+            return {}
+
+    # --- NEW METHOD: Save Hashed Credentials ---
+    def save_auth_config(self, auth_config: Dict[str, str]) -> bool:
+        """Save authentication credentials"""
+        try:
+            with open(self.auth_json_path, 'w') as f:
+                json.dump(auth_config, f, indent=2)
+            return True
+        except Exception as e:
+            st.error(f"Error saving Auth config: {e}")
+            return False
     
     def load_yaml_config(self) -> Dict[str, Any]:
         """Load YAML configuration with error handling"""
@@ -286,15 +316,144 @@ class ConfigManager:
             st.error(f"Error stopping application: {e}")
             return False
 
+def render_user_management(config_manager: ConfigManager):
+    """Render the user management tab for password change."""
+    st.header("🔑 Account Management")
+    st.info("Change your password. Must be at least 8 characters.")
+    
+    auth_config = config_manager.load_auth_config()
+    current_user = st.session_state.username
+    
+    st.write(f"Editing password for user: **{current_user}**")
+    
+    with st.form("password_change_form"):
+        old_password = st.text_input("Current Password", type="password")
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+            
+    
+        submitted = st.form_submit_button("Change Password", type="primary", use_container_width=True)
+
+        if submitted:
+            # 1. Check current password
+            if not check_credentials_hash(current_user, old_password, auth_config):
+                st.error("❌ Current password is incorrect.")
+            # 2. Check new password validity
+            elif len(new_password) < 8:
+                st.error("❌ New password must be at least 8 characters long.")
+            # 3. Check new password confirmation
+            elif new_password != confirm_password:
+                st.error("❌ New password and confirmation do not match.")
+            else:
+                # 4. Hash and save new password
+                hashed_new_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                
+                # Update the config in memory
+                new_auth_config = auth_config.copy()
+                new_auth_config[current_user] = hashed_new_password
+                
+                if config_manager.save_auth_config(new_auth_config):
+                    st.success("✅ Password changed successfully! Please login with your new password on next session.")
+                    st.toast("Password updated!", icon="🔒")
+                    st.rerun()
+                else:
+                    st.error("An error occurred while saving the new password.")
+                    
+
+
+# --- NEW AUTHENTICATION LOGIC (Place after ConfigManager class) ---
+
+def check_credentials_hash(username, password, auth_config):
+    """Checks the provided password against the hashed password using bcrypt."""
+    if username not in auth_config:
+        return False
+    
+    # Check if the entered password matches the stored hash
+    # .encode('utf-8') is necessary for bcrypt
+    try:
+        hashed_password = auth_config[username].encode('utf-8')
+        return bcrypt.checkpw(password.encode('utf-8'), hashed_password)
+    except Exception:
+        # Handle case where hash is corrupted or not a valid bcrypt hash
+        return False
+
+def login_form(config_manager: ConfigManager):
+    """Renders the login form and handles submission."""
+    
+    st.markdown("""
+        <style>
+        /* CSS to center the login box for a cleaner look */
+        .login-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 350px;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            background-color: #f0f2f6;
+        }
+        </style>
+        <div class="login-container">
+            <h1 style='text-align: center; color: #1f77b4;'>Login</h1>
+        </div>
+    """, unsafe_allow_html=True)
+
+    auth_config = config_manager.load_auth_config()
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("<div style='margin-top: 100px;'></div>", unsafe_allow_html=True)
+        with st.form("login_form"):
+            st.subheader("Enter Credentials")
+            username = st.text_input("Username", key="login_username")
+            password = st.text_input("Password", type="password", key="login_password")
+            submitted = st.form_submit_button("Log In", type="primary", use_container_width=True)
+
+            if submitted:
+                if check_credentials_hash(username, password, auth_config):
+                    st.session_state['logged_in'] = True
+                    st.session_state['username'] = username
+                    st.toast(f"Welcome, {username}!", icon="👋")
+                    st.rerun()
+                else:
+                    st.error("❌ Incorrect Username or Password")
+
+# Session State Initialization 
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+if 'username' not in st.session_state:
+    st.session_state['username'] = None
 
 def main():
     """Main application entry point"""
+    
+        # Initialize session state
+    if 'config_manager' not in st.session_state:
+        st.session_state.config_manager = ConfigManager()
+    
+    if 'app_pid' not in st.session_state:
+        st.session_state.app_pid = None
+    
+    if 'app_start_time' not in st.session_state:
+        st.session_state.app_start_time = None
+    
+    config_manager = st.session_state.config_manager
+    
+        # 2. CHECK LOGIN STATUS
+    if not st.session_state.logged_in:
+        login_form(config_manager) # Show login form
+        return # STOP execution of the rest of the app
+    
     st.set_page_config(
         page_title="Stoxxo Order Processor",
         page_icon="📊",
         layout="wide",
         initial_sidebar_state="expanded"
     )
+    
     
     # Custom CSS
     st.markdown("""
@@ -324,20 +483,9 @@ def main():
         </style>
     """, unsafe_allow_html=True)
     
+    
     st.markdown('<div class="main-header">📊 Stoxxo Order Processor</div>', unsafe_allow_html=True)
     st.markdown("### Configuration Management System")
-    
-    # Initialize session state
-    if 'config_manager' not in st.session_state:
-        st.session_state.config_manager = ConfigManager()
-    
-    if 'app_pid' not in st.session_state:
-        st.session_state.app_pid = None
-    
-    if 'app_start_time' not in st.session_state:
-        st.session_state.app_start_time = None
-    
-    config_manager = st.session_state.config_manager
     
     # Sidebar - Application Control
     with st.sidebar:
@@ -379,6 +527,32 @@ def main():
         
         if st.button("🔄 Reload Configs", use_container_width=True):
             st.rerun()
+            
+        st.divider()
+        # --- NEW USER SESSION BLOCK (ADD THIS) ---
+        st.header("👤 User Session")
+        st.info(f"Logged in as: **{st.session_state.username}**")
+        
+        # Button to toggle password change view
+        if st.button("🔑 Change Password", use_container_width=True):
+            st.session_state['show_password_change'] = True 
+        
+        if st.button("🚪 Logout", use_container_width=True):
+            config_manager = st.session_state.config_manager
+            if config_manager.is_app_running():
+                st.warning("Stopping application before logout...")
+                config_manager.stop_application()
+                # Refresh app running status
+            st.session_state['logged_in'] = False
+            del st.session_state['username']
+            st.rerun()
+            
+    if st.session_state.get('show_password_change', False):
+        render_user_management(config_manager)
+    if st.button("↩️ Back to Config", key="back_from_pw_change"):
+        st.session_state['show_password_change'] = False
+        st.rerun()
+        return # STOP RENDERING OTHER TABS
     
     # Main content - Configuration tabs
     tab1, tab2, tab3, tab4 = st.tabs([
@@ -578,6 +752,7 @@ def render_strategy_config(config_manager: ConfigManager):
         if st.button("➕ Add New Strategy", type="primary", use_container_width=True):
             new_strategy = {
                 'name': f"Strategy_{len(config['strategies']) + 1}",
+                'description': "Enter strategy description here.",
                 'tradetron_urls': [],
                 'algotest_urls': [],
                 'active': True
@@ -591,10 +766,31 @@ def render_strategy_config(config_manager: ConfigManager):
         st.warning("📭 No strategies configured. Click 'Add New Strategy' to create one.")
     else:
         for i, strategy in enumerate(config['strategies']):
+            strategy['description'] = strategy.get('description', '') 
             status_icon = "✅" if strategy.get('active', True) else "⏸️"
             expander_title = f"{status_icon} {strategy.get('name', f'Strategy_{i+1}')}"
-            
+            desc_snippet = strategy['description'].replace('\n', ' ')
+            if desc_snippet:
+                if len(desc_snippet) > 50: # Limit snippet length
+                    desc_snippet = desc_snippet[:50].strip() + '...'
+                # This makes the description visible on the "drop down" (expander)
+                expander_title = f"{status_icon} **{strategy.get('name', f'Strategy_{i+1}')}** - *{desc_snippet}*"
+            else:
+                expander_title = f"{status_icon} **{strategy.get('name', f'Strategy_{i+1}')}**"
+                    
+                    
             with st.expander(expander_title, expanded=False):
+                
+                # ADDED: Input field for the description
+                strategy['description'] = st.text_area(
+                    "Strategy Description",
+                    value=strategy['description'],
+                    key=f"strat_desc_{i}",
+                    height=70,
+                    help="A detailed description of the strategy's purpose or logic."
+                )
+                
+                st.markdown("---") # ADDED separator for cleaner UI
                 col1, col2 = st.columns([3, 1])
                 
                 with col1:
